@@ -1,4 +1,71 @@
 /**@type{HTMLCanvasElement} */
+class Laser {
+  constructor(game) {
+    this.game = game;
+    this.x = 0;
+    this.y = 0;
+    this.height = this.game.height - 50;
+  }
+  render(ctx) {
+    this.x =
+      this.game.player.x + this.game.player.width * 0.5 - this.width * 0.5;
+    this.game.player.energy -= this.damage;
+    ctx.save();
+    ctx.fillStyle = "gold";
+    ctx.fillRect(this.x, this.y, this.width, this.height);
+    ctx.fillStyle = "white";
+    ctx.fillRect(
+      this.x + this.width * 0.2,
+      this.y,
+      this.width * 0.6,
+      this.height
+    );
+    ctx.restore();
+
+    if (this.game.spriteUpdate) {
+      this.game.waves.forEach((wave) => {
+        wave.enemies.forEach((enemy) => {
+          if (this.game.checkCollision(enemy, this)) {
+            enemy.hit(this.damage);
+          }
+        });
+      });
+      this.game.bossArray.forEach((boss) => {
+        if (this.game.checkCollision(boss, this) && boss.y >= 0) {
+          boss.hit(this.damage);
+        }
+      });
+    }
+  }
+}
+
+class SmallLaser extends Laser {
+  constructor(game) {
+    super(game);
+    this.width = 5;
+    this.damage = 0.3;
+  }
+  render(ctx) {
+    if (this.game.player.energy > 1 && !this.game.player.coolDown) {
+      super.render(ctx);
+      this.game.player.frameX = 2;
+    }
+  }
+}
+
+class LargeLaser extends Laser {
+  constructor(game) {
+    super(game);
+    this.width = 25;
+    this.damage = 0.7;
+  }
+  render(ctx) {
+    if (this.game.player.energy > 1 && !this.game.player.coolDown) {
+      super.render(ctx);
+      this.game.player.frameX = 3;
+    }
+  }
+}
 
 class Player {
   constructor(game) {
@@ -14,11 +81,20 @@ class Player {
     this.jets_image = document.getElementById("player_jets");
     this.frameX = 0;
     this.jetsFrame = 1;
+    this.smallLaser = new SmallLaser(this.game);
+    this.largeLaser = new LargeLaser(this.game);
+    this.energy = 50;
+    this.maxEnergy = 100;
+    this.coolDown = false;
   }
   draw(ctx) {
     //handle sprite frames
     if (this.game.keys.indexOf("s") > -1) {
       this.frameX = 1;
+    } else if (this.game.keys.indexOf("a") > -1) {
+      this.smallLaser.render(ctx);
+    } else if (this.game.keys.indexOf("d") > -1) {
+      this.largeLaser.render(ctx);
     } else {
       this.frameX = 0;
     }
@@ -46,6 +122,15 @@ class Player {
     );
   }
   update() {
+    //energy
+    if (this.energy < this.maxEnergy) {
+      this.energy += 0.05;
+    }
+    if (this.energy < 1) {
+      this.coolDown = true;
+    } else if (this.energy > this.maxEnergy * 0.2) {
+      this.coolDown = false;
+    }
     //horizontal movement
     if (this.game.keys.indexOf("ArrowLeft") > -1) {
       this.x -= this.speed;
@@ -230,10 +315,14 @@ class Boss {
       this.width,
       this.height
     );
-    if (this.lives > 0) {
+    if (this.lives >= 1) {
       ctx.save();
       ctx.textAlign = "center";
-      ctx.fillText(this.lives, this.x + this.width * 0.5, this.y + 50);
+      ctx.fillText(
+        Math.floor(this.lives),
+        this.x + this.width * 0.5,
+        this.y + 50
+      );
       ctx.shadowOffsetX = 3;
       ctx.shadowOffsetY = 3;
       ctx.shadowColor = "black";
@@ -242,7 +331,7 @@ class Boss {
   }
   update() {
     this.speedY = 0;
-    if (this.game.spriteUpdate && this.lives > 0) {
+    if (this.game.spriteUpdate && this.lives >= 1) {
       this.frameX = 0;
     }
     if (this.y < 0) {
@@ -250,7 +339,7 @@ class Boss {
     }
     if (
       this.x < 0 ||
-      (this.x > this.game.width - this.width && this.lives > 0)
+      (this.x > this.game.width - this.width && this.lives >= 1)
     ) {
       this.speedX *= -1;
       this.speedY = this.height * 0.5;
@@ -263,7 +352,7 @@ class Boss {
       if (
         this.game.checkCollision(this, projectile) &&
         !projectile.free &&
-        this.lives > 0 &&
+        this.lives >= 1 &&
         this.y >= 0
       ) {
         this.hit(1);
@@ -325,7 +414,6 @@ class Wave {
     }
     this.x += this.speedX;
     this.y += this.speedY;
-
     this.enemies.forEach((enemy) => {
       enemy.update(this.x, this.y);
       enemy.draw(ctx);
@@ -408,6 +496,8 @@ class Game {
       projectile.update();
       projectile.draw(ctx);
     });
+    this.player.draw(ctx);
+    this.player.update();
     this.bossArray.forEach((boss) => {
       boss.draw(ctx);
       boss.update();
@@ -415,9 +505,6 @@ class Game {
     this.bossArray = this.bossArray.filter(
       (object) => !object.markedForDeletion
     );
-
-    this.player.draw(ctx);
-    this.player.update();
 
     this.waves.forEach((wave) => {
       wave.render(ctx);
@@ -458,6 +545,14 @@ class Game {
     for (let i = 0; i < this.player.lives; i++) {
       ctx.fillRect(20 + 20 * i, 100, 10, 15);
     }
+    //energy
+    ctx.save();
+    this.player.coolDown ? (ctx.fillStyle = "red") : (ctx.fillStyle = "gold");
+    for (let i = 0; i < this.player.energy; i++) {
+      ctx.fillRect(20 + 2 * i, 130, 2, 15);
+    }
+    ctx.restore();
+
     if (this.gameOver) {
       ctx.textAlign = "center";
       ctx.font = "100px impact";
@@ -467,6 +562,21 @@ class Game {
         "Press r To Restart",
         this.width * 0.5,
         this.height * 0.5 + 50
+      );
+      ctx.fillText(
+        "Press s To Shoot Bullets",
+        this.width * 0.5,
+        this.height * 0.5 + 100
+      );
+      ctx.fillText(
+        "Press d To Shoot Low Energy Laser",
+        this.width * 0.5,
+        this.height * 0.5 + 150
+      );
+      ctx.fillText(
+        "Press a To Shoot High Energy Laser",
+        this.width * 0.5,
+        this.height * 0.5 + 200
       );
     }
     ctx.restore();
